@@ -632,17 +632,6 @@ public final class MekanismUtils
 	 * @param def - the original, default secondary energy required
 	 * @return max secondary energy per tick
 	 */
-	public static int getSecondaryEnergyPerTick(IUpgradeManagement mgmt, int def)
-	{
-		return (int)getSecondaryEnergyPerTickMean(mgmt, def);
-	}
-
-	/**
-	 * Gets the secondary energy required per tick for a machine via upgrades.
-	 * @param mgmt - tile containing upgrades
-	 * @param def - the original, default secondary energy required
-	 * @return max secondary energy per tick
-	 */
 	public static double getSecondaryEnergyPerTickMean(IUpgradeManagement mgmt, int def)
 	{
 		return (def * Math.pow(Mekanism.maxUpgradeMultiplier, (mgmt.getSpeedMultiplier()-mgmt.getEnergyMultiplier())/8.0));
@@ -668,6 +657,37 @@ public final class MekanismUtils
 	public static double getMaxEnergy(ItemStack itemStack, IUpgradeManagement mgmt, double def)
 	{
 		return def * Math.pow(Mekanism.maxUpgradeMultiplier, mgmt.getEnergyMultiplier(itemStack)/8.0);
+	}
+	
+	/**
+	 * A better "isBlockIndirectlyGettingPowered()" that doesn't load chunks
+	 * @param world - the world to perform the check in
+	 * @param coord - the coordinate of the block performing the check
+	 * @return if the block is indirectly getting powered by LOADED chunks
+	 */
+	public static boolean isGettingPowered(World world, Coord4D coord)
+	{
+		for(ForgeDirection side : ForgeDirection.VALID_DIRECTIONS)
+		{
+			Coord4D sideCoord = coord.getFromSide(side);
+			
+			if(sideCoord.exists(world) && sideCoord.getFromSide(side).exists(world))
+			{
+				if(sideCoord.getFromSide(side).exists(world))
+				{
+					if(world.getIndirectPowerLevelTo(sideCoord.xCoord, sideCoord.yCoord, sideCoord.zCoord, side.ordinal()) > 0)
+					{
+						return true;
+					}
+				}
+				else if(world.isBlockProvidingPowerTo(sideCoord.xCoord, sideCoord.yCoord, sideCoord.zCoord, side.ordinal()) > 0)
+				{
+					return true;
+				}
+			}
+		}
+		
+		return false;
 	}
 
 	/**

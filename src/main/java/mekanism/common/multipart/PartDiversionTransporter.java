@@ -6,8 +6,8 @@ import mekanism.api.Coord4D;
 import mekanism.api.EnumColor;
 import mekanism.api.Range4D;
 import mekanism.common.Mekanism;
+import mekanism.common.content.transporter.TransporterStack;
 import mekanism.common.network.PacketTileEntity.TileEntityMessage;
-import mekanism.common.transporter.TransporterStack;
 import mekanism.common.util.MekanismUtils;
 
 import net.minecraft.entity.player.EntityPlayer;
@@ -35,9 +35,27 @@ public class PartDiversionTransporter extends PartLogisticalTransporter
 	}
 
 	@Override
-	public IIcon getCenterIcon()
+	public IIcon getCenterIcon(boolean opaque)
 	{
-		return transporterIcons.getCenterIcon(2);
+		return transporterIcons.getCenterIcon(5);
+	}
+	
+	@Override
+	public IIcon getSideIcon(boolean opaque)
+	{
+		return transporterIcons.getSideIcon(opaque ? 14 : (color != null ? 11 : 10));
+	}
+	
+	@Override
+	public IIcon getSideIconRotated(boolean opaque)
+	{
+		return transporterIcons.getSideIcon(opaque ? 15 : (color != null ? 13 : 12));
+	}
+	
+	@Override
+	public boolean renderCenter()
+	{
+		return true;
 	}
 
 	@Override
@@ -57,7 +75,7 @@ public class PartDiversionTransporter extends PartLogisticalTransporter
 	}
 
 	@Override
-	public void handlePacketData(ByteBuf dataStream)
+	public void handlePacketData(ByteBuf dataStream) throws Exception
 	{
 		super.handlePacketData(dataStream);
 		
@@ -122,6 +140,7 @@ public class PartDiversionTransporter extends PartLogisticalTransporter
 
 		refreshConnections();
 		tile().notifyPartChange(this);
+		notifyTileChange();
 		player.addChatMessage(new ChatComponentText(EnumColor.DARK_BLUE + "[Mekanism]" + EnumColor.GREY + " " + MekanismUtils.localize("tooltip.configurator.toggleDiverter") + ": " + EnumColor.RED + description));
 		Mekanism.packetHandler.sendToReceivers(new TileEntityMessage(Coord4D.get(tile()), getNetworkedData(new ArrayList())), new Range4D(Coord4D.get(tile())));
 

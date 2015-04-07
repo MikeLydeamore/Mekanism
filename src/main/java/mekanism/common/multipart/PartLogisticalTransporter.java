@@ -1,5 +1,7 @@
 package mekanism.common.multipart;
 
+import io.netty.buffer.ByteBuf;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
@@ -7,22 +9,26 @@ import java.util.Set;
 import mekanism.api.Coord4D;
 import mekanism.api.EnumColor;
 import mekanism.api.Range4D;
+import mekanism.api.transmitters.IGridTransmitter;
 import mekanism.api.transmitters.TransmissionType;
 import mekanism.client.render.RenderPartTransmitter;
 import mekanism.common.HashList;
-import mekanism.common.ILogisticalTransporter;
+import mekanism.common.InventoryNetwork;
 import mekanism.common.Mekanism;
+import mekanism.common.Tier;
+import mekanism.common.Tier.TransporterTier;
+import mekanism.common.base.ILogisticalTransporter;
+import mekanism.common.content.transporter.InvStack;
+import mekanism.common.content.transporter.PathfinderCache;
+import mekanism.common.content.transporter.TransporterManager;
+import mekanism.common.content.transporter.TransporterStack;
+import mekanism.common.content.transporter.TransporterStack.Path;
 import mekanism.common.network.PacketDataRequest.DataRequestMessage;
 import mekanism.common.network.PacketTileEntity.TileEntityMessage;
 import mekanism.common.tile.TileEntityLogisticalSorter;
-import mekanism.common.transporter.InvStack;
-import mekanism.common.transporter.TransporterManager;
-import mekanism.common.transporter.TransporterStack;
-import mekanism.common.transporter.TransporterStack.Path;
 import mekanism.common.util.InventoryUtils;
 import mekanism.common.util.MekanismUtils;
 import mekanism.common.util.TransporterUtils;
-
 import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.IInventory;
@@ -34,20 +40,17 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.IIcon;
 import net.minecraftforge.common.util.Constants.NBT;
 import net.minecraftforge.common.util.ForgeDirection;
-import cpw.mods.fml.common.Optional.Interface;
-import cpw.mods.fml.common.Optional.Method;
+import codechicken.lib.vec.Vector3;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 
-import io.netty.buffer.ByteBuf;
-
-import codechicken.lib.vec.Vector3;
-
-public class PartLogisticalTransporter extends PartSidedPipe implements ILogisticalTransporter
+public class PartLogisticalTransporter extends PartTransmitter<InventoryNetwork> implements ILogisticalTransporter
 {
-	public static TransmitterIcons transporterIcons = new TransmitterIcons(3, 2);
+	public Tier.TransporterTier tier = Tier.TransporterTier.BASIC;
+	
+	public static TransmitterIcons transporterIcons = new TransmitterIcons(8, 16);
 
-	public static final int SPEED = 5;
+	public int speed = 5;
 
 	public EnumColor color;
 
@@ -56,17 +59,24 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	public HashList<TransporterStack> transit = new HashList<TransporterStack>();
 
 	public Set<TransporterStack> needsSync = new HashSet<TransporterStack>();
+	
+	public PartLogisticalTransporter(Tier.TransporterTier transporterTier)
+	{
+		tier = transporterTier;
+	}
+	
+	protected PartLogisticalTransporter() {}
 
 	@Override
 	public String getType()
 	{
-		return "mekanism:logistical_transporter";
+		return "mekanism:logistical_transporter_" + tier.name().toLowerCase();
 	}
 
 	@Override
 	public TransmitterType getTransmitter()
 	{
-		return TransmitterType.LOGISTICAL_TRANSPORTER;
+		return tier.type;
 	}
 
 	@Override
@@ -77,8 +87,12 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 
 	public static void registerIcons(IIconRegister register)
 	{
-		transporterIcons.registerCenterIcons(register, new String[] {"LogisticalTransporter", "RestrictiveTransporter", "DiversionTransporter"});
-		transporterIcons.registerSideIcons(register, new String[] {"LogisticalTransporterSide", "RestrictiveTransporterSide"});
+		transporterIcons.registerCenterIcons(register, new String[] {"LogisticalTransporterBasic", "LogisticalTransporterAdvanced", "LogisticalTransporterElite", "LogisticalTransporterUltimate", "RestrictiveTransporter", 
+				"DiversionTransporter", "LogisticalTransporterGlass", "LogisticalTransporterGlassColored"});
+		transporterIcons.registerSideIcons(register, new String[] {"LogisticalTransporterVerticalBasic", "LogisticalTransporterVerticalAdvanced", "LogisticalTransporterVerticalElite", "LogisticalTransporterVerticalUltimate", 
+				"LogisticalTransporterHorizontalBasic", "LogisticalTransporterHorizontalAdvanced", "LogisticalTransporterHorizontalElite", "LogisticalTransporterHorizontalUltimate", "RestrictiveTransporterVertical", 
+				"RestrictiveTransporterHorizontal", "LogisticalTransporterVerticalGlass", "LogisticalTransporterVerticalGlassColored", "LogisticalTransporterHorizontalGlass", "LogisticalTransporterHorizontalGlassColored",
+				"DiversionTransporterVertical", "DiversionTransporterHorizontal"});
 	}
 
 	@Override
@@ -90,78 +104,47 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 			RenderPartTransmitter.getInstance().renderContents(this, f, pos);
 		}
 	}
-
+	
 	@Override
-	public boolean canConnect(ForgeDirection side)
+	public void onWorldSeparate()
 	{
-		testingSide = side;
-		boolean unblocked = tile().canReplacePart(this, this);
-		testingSide = null;
-		return unblocked;
-	}
-
-	@Override
-	public byte getPossibleTransmitterConnections()
-	{
-		byte connections = 0x00;
-
-		if(world().isBlockIndirectlyGettingPowered(x(), y(), z()))
+		super.onWorldSeparate();
+		
+		if(!world().isRemote)
 		{
-			return connections;
+			PathfinderCache.onChanged(Coord4D.get(tile()));
 		}
+	}
+	
+	@Override
+	protected boolean isValidTransmitter(TileEntity tileEntity)
+	{
+		ILogisticalTransporter transporter = (ILogisticalTransporter)tileEntity;
 
-		for(ForgeDirection side : ForgeDirection.VALID_DIRECTIONS)
+		if(getColor() == null || transporter.getColor() == null || getColor() == transporter.getColor())
 		{
-			if(canConnectMutual(side))
-			{
-				TileEntity tileEntity = Coord4D.get(tile()).getFromSide(side).getTileEntity(world());
-
-				if(TransmissionType.checkTransmissionType(tileEntity, getTransmitter().getTransmission()))
-				{
-					ILogisticalTransporter transporter = (ILogisticalTransporter)tileEntity;
-
-					if(getColor() == null || transporter.getColor() == null || getColor() == transporter.getColor())
-					{
-						connections |= 1 << side.ordinal();
-					}
-				}
-			}
+			return super.isValidTransmitter(tileEntity);
 		}
-
-		return connections;
+		
+		return false;
 	}
 
 	@Override
-	public byte getPossibleAcceptorConnections()
+	public IIcon getCenterIcon(boolean opaque)
 	{
-		byte connections = 0x00;
-
-		for(ForgeDirection side : ForgeDirection.VALID_DIRECTIONS)
-		{
-			if(canConnectMutual(side))
-			{
-				TileEntity tileEntity = Coord4D.get(tile()).getFromSide(side).getTileEntity(world());
-
-				if(isValidAcceptor(tileEntity, side))
-				{
-					connections |= 1 << side.ordinal();
-				}
-			}
-		}
-
-		return connections;
+		return transporterIcons.getCenterIcon(opaque ? tier.ordinal() : (color != null ? 7 : 6));
 	}
 
 	@Override
-	public IIcon getCenterIcon()
+	public IIcon getSideIcon(boolean opaque)
 	{
-		return transporterIcons.getCenterIcon(0);
+		return transporterIcons.getSideIcon(opaque ? tier.ordinal() : (color != null ? 11 : 10));
 	}
 
 	@Override
-	public IIcon getSideIcon()
+	public IIcon getSideIconRotated(boolean opaque)
 	{
-		return transporterIcons.getSideIcon(0);
+		return transporterIcons.getSideIcon(opaque ? 4+tier.ordinal() : (color != null ? 13 : 12));
 	}
 
 	@Override
@@ -169,9 +152,12 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	{
 		return TransporterUtils.isValidAcceptorOnSide(tile, side);
 	}
-
+	
 	@Override
-	public void onModeChange(ForgeDirection side) {}
+	public boolean handlesRedstone()
+	{
+		return false;
+	}
 
 	@Override
 	public void update()
@@ -184,7 +170,7 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 			{
 				if(stack != null)
 				{
-					stack.progress = Math.min(100, stack.progress+SPEED);
+					stack.progress = Math.min(100, stack.progress+tier.speed);
 				}
 			}
 		}
@@ -204,7 +190,7 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 					}
 				}
 
-				stack.progress += SPEED;
+				stack.progress += tier.speed;
 
 				if(stack.progress > 100)
 				{
@@ -213,6 +199,13 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 					if(stack.hasPath())
 					{
 						int currentIndex = stack.pathToTarget.indexOf(Coord4D.get(tile()));
+						
+						if(currentIndex == 0) //Necessary for transition reasons, not sure why
+						{
+							remove.add(stack);
+							continue;
+						}
+						
 						Coord4D next = stack.pathToTarget.get(currentIndex-1);
 
 						if(!stack.isFinal(this))
@@ -220,7 +213,7 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 							if(next != null && stack.canInsertToTransporter(stack.getNext(this).getTileEntity(world()), ForgeDirection.getOrientation(stack.getSide(this))))
 							{
 								ILogisticalTransporter nextTile = (ILogisticalTransporter)next.getTileEntity(world());
-								nextTile.entityEntering(stack);
+								nextTile.entityEntering(stack, stack.progress%100);
 								remove.add(stack);
 
 								continue;
@@ -364,7 +357,7 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 				if(tile instanceof IInventory)
 				{
 					IInventory inv = (IInventory)tile;
-					InvStack stack = InventoryUtils.takeTopItem(inv, side.ordinal());
+					InvStack stack = InventoryUtils.takeTopItem(inv, side.ordinal(), tier.pullAmount);
 
 					if(stack != null && stack.getStack() != null)
 					{
@@ -435,7 +428,7 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 		stack.originalLocation = original;
 		stack.homeLocation = original;
 		stack.color = color;
-
+		
 		if((force && !canReceiveFrom(original.getTileEntity(world()), from)) || !stack.canInsertToTransporter(tile(), from))
 		{
 			return itemStack;
@@ -498,9 +491,9 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	}
 
 	@Override
-	public void entityEntering(TransporterStack stack)
+	public void entityEntering(TransporterStack stack, int progress)
 	{
-		stack.progress = 0;
+		stack.progress = progress;
 		transit.add(stack);
 		Mekanism.packetHandler.sendToReceivers(new TileEntityMessage(Coord4D.get(tile()), getSyncPacket(stack, false)), new Range4D(Coord4D.get(tile())));
 		MekanismUtils.saveChunk(tile());
@@ -515,11 +508,16 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 		{
 			Mekanism.packetHandler.sendToServer(new DataRequestMessage(Coord4D.get(tile())));
 		}
+		else {
+			PathfinderCache.onChanged(Coord4D.get(tile()));
+		}
 	}
 
 	@Override
-	public void handlePacketData(ByteBuf dataStream)
+	public void handlePacketData(ByteBuf dataStream) throws Exception
 	{
+		super.handlePacketData(dataStream);
+		
 		int type = dataStream.readInt();
 
 		if(type == 0)
@@ -575,6 +573,8 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	@Override
 	public ArrayList getNetworkedData(ArrayList data)
 	{
+		super.getNetworkedData(data);
+		
 		data.add(0);
 
 		if(color != null)
@@ -615,6 +615,8 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	public void load(NBTTagCompound nbtTags)
 	{
 		super.load(nbtTags);
+		
+		tier = TransporterTier.values()[nbtTags.getInteger("tier")];
 
 		if(nbtTags.hasKey("color"))
 		{
@@ -639,6 +641,8 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	public void save(NBTTagCompound nbtTags)
 	{
 		super.save(nbtTags);
+		
+		nbtTags.setInteger("tier", tier.ordinal());
 
 		if(color != null)
 		{
@@ -665,7 +669,8 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	{
 		TransporterUtils.incrementColor(this);
 		refreshConnections();
-		tile().notifyTileChange();
+		notifyTileChange();
+		PathfinderCache.onChanged(Coord4D.get(tile()));
 		Mekanism.packetHandler.sendToReceivers(new TileEntityMessage(Coord4D.get(tile()), getNetworkedData(new ArrayList())), new Range4D(Coord4D.get(tile())));
 		player.addChatMessage(new ChatComponentText(EnumColor.DARK_BLUE + "[Mekanism]" + EnumColor.GREY + " " + MekanismUtils.localize("tooltip.configurator.toggleColor") + ": " + (color != null ? color.getName() : EnumColor.BLACK + MekanismUtils.localize("gui.none"))));
 
@@ -676,7 +681,9 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	public boolean onRightClick(EntityPlayer player, int side)
 	{
 		super.onRightClick(player, side);
+		
 		player.addChatMessage(new ChatComponentText(EnumColor.DARK_BLUE + "[Mekanism]" + EnumColor.GREY + " " + MekanismUtils.localize("tooltip.configurator.viewColor") + ": " + (color != null ? color.getName() : "None")));
+		
 		return true;
 	}
 
@@ -693,15 +700,15 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	}
 
 	@Override
-	public TileEntity getTile()
+	public EnumColor getRenderColor(boolean post)
 	{
-		return tile();
+		return post ? null : color;
 	}
-
+	
 	@Override
-	public EnumColor getRenderColor()
+	public boolean transparencyRender()
 	{
-		return color;
+		return true;
 	}
 
 	@Override
@@ -744,5 +751,47 @@ public class PartLogisticalTransporter extends PartSidedPipe implements ILogisti
 	public int getCost()
 	{
 		return 1;
+	}
+	
+	@Override
+	public int getTransmitterNetworkSize()
+	{
+		return getTransmitterNetwork().getSize();
+	}
+
+	@Override
+	public int getTransmitterNetworkAcceptorSize()
+	{
+		return getTransmitterNetwork().getAcceptorSize();
+	}
+
+	@Override
+	public String getTransmitterNetworkNeeded()
+	{
+		return getTransmitterNetwork().getNeededInfo();
+	}
+
+	@Override
+	public String getTransmitterNetworkFlow()
+	{
+		return getTransmitterNetwork().getFlowInfo();
+	}
+
+	@Override
+	public int getCapacity()
+	{
+		return 0;
+	}
+
+	@Override
+	public InventoryNetwork createNetworkFromSingleTransmitter(IGridTransmitter<InventoryNetwork> transmitter) 
+	{
+		return new InventoryNetwork(transmitter);
+	}
+
+	@Override
+	public InventoryNetwork createNetworkByMergingSet(Set<InventoryNetwork> networks)
+	{
+		return new InventoryNetwork(networks);
 	}
 }

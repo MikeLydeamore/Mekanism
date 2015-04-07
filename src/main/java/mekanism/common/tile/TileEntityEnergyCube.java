@@ -5,10 +5,10 @@ import java.util.EnumSet;
 
 import mekanism.api.Coord4D;
 import mekanism.api.Range4D;
-import mekanism.common.IRedstoneControl;
 import mekanism.common.Mekanism;
 import mekanism.common.PacketHandler;
 import mekanism.common.Tier.EnergyCubeTier;
+import mekanism.common.base.IRedstoneControl;
 import mekanism.common.network.PacketTileEntity.TileEntityMessage;
 import mekanism.common.util.CableUtils;
 import mekanism.common.util.ChargeUtils;
@@ -82,13 +82,13 @@ public class TileEntityEnergyCube extends TileEntityElectricBlock implements IPe
 	@Override
 	public String getInventoryName()
 	{
-		return MekanismUtils.localize(getBlockType().getUnlocalizedName() + "." + tier.name + ".name");
+		return MekanismUtils.localize("tile.EnergyCube" + tier.getBaseTier().getName() + ".name");
 	}
 
 	@Override
 	public double getMaxOutput()
 	{
-		return tier.OUTPUT;
+		return tier.output;
 	}
 
 	@Override
@@ -107,7 +107,7 @@ public class TileEntityEnergyCube extends TileEntityElectricBlock implements IPe
 	}
 
 	@Override
-	protected EnumSet<ForgeDirection> getConsumingSides()
+	public EnumSet<ForgeDirection> getConsumingSides()
 	{
 		EnumSet set = EnumSet.allOf(ForgeDirection.class);
 		set.removeAll(getOutputtingSides());
@@ -131,7 +131,7 @@ public class TileEntityEnergyCube extends TileEntityElectricBlock implements IPe
 	@Override
 	public double getMaxEnergy()
 	{
-		return tier.MAX_ELECTRICITY;
+		return tier.maxEnergy;
 	}
 
 	@Override
@@ -178,7 +178,7 @@ public class TileEntityEnergyCube extends TileEntityElectricBlock implements IPe
 			case 0:
 				return new Object[] {getEnergy()};
 			case 1:
-				return new Object[] {tier.OUTPUT};
+				return new Object[] {tier.output};
 			case 2:
 				return new Object[] {getMaxEnergy()};
 			case 3:
@@ -219,7 +219,7 @@ public class TileEntityEnergyCube extends TileEntityElectricBlock implements IPe
 	@Override
 	public ArrayList getNetworkedData(ArrayList data)
 	{
-		data.add(tier.name);
+		data.add(tier.getBaseTier().getName());
 
 		super.getNetworkedData(data);
 
@@ -242,13 +242,18 @@ public class TileEntityEnergyCube extends TileEntityElectricBlock implements IPe
 	{
 		super.writeToNBT(nbtTags);
 
-		nbtTags.setString("tier", tier.name);
+		nbtTags.setString("tier", tier.getBaseTier().getName());
 		nbtTags.setInteger("controlType", controlType.ordinal());
 	}
 
 	@Override
 	public void setEnergy(double energy)
 	{
+		if(tier == EnergyCubeTier.CREATIVE && energy != Integer.MAX_VALUE)
+		{
+			return;
+		}
+		
 		super.setEnergy(energy);
 
 		int newRedstoneLevel = getRedstoneLevel();
@@ -276,5 +281,11 @@ public class TileEntityEnergyCube extends TileEntityElectricBlock implements IPe
 	public void setControlType(RedstoneControl type)
 	{
 		controlType = type;
+	}
+
+	@Override
+	public boolean canPulse()
+	{
+		return false;
 	}
 }

@@ -3,9 +3,10 @@ package mekanism.common.block;
 import java.util.Random;
 
 import mekanism.api.gas.IGasItem;
-import mekanism.common.ISustainedInventory;
 import mekanism.common.ItemAttacher;
 import mekanism.common.Mekanism;
+import mekanism.common.MekanismBlocks;
+import mekanism.common.base.ISustainedInventory;
 import mekanism.common.tile.TileEntityBasicBlock;
 import mekanism.common.tile.TileEntityGasTank;
 import mekanism.common.util.MekanismUtils;
@@ -43,7 +44,10 @@ public class BlockGasTank extends BlockContainer
 
 	@Override
 	@SideOnly(Side.CLIENT)
-	public void registerBlockIcons(IIconRegister register) {}
+	public void registerBlockIcons(IIconRegister register) 
+	{
+		blockIcon = register.registerIcon("mekanism:SteelCasing");
+	}
 
 	@Override
 	public void onBlockPlacedBy(World world, int x, int y, int z, EntityLivingBase entityliving, ItemStack itemstack)
@@ -106,7 +110,7 @@ public class BlockGasTank extends BlockContainer
 					return true;
 				}
 
-				if(ModAPIManager.INSTANCE.hasAPI("BuildCraftAPI|tools") && tool instanceof IToolWrench)
+				if(MekanismUtils.isBCWrench(tool))
 					((IToolWrench)tool).wrenchUsed(entityplayer, x, y, z);
 
 				int change = ForgeDirection.ROTATION_MATRIX[ForgeDirection.UP.ordinal()][tileEntity.facing];
@@ -207,7 +211,7 @@ public class BlockGasTank extends BlockContainer
 	public ItemStack getPickBlock(MovingObjectPosition target, World world, int x, int y, int z)
 	{
 		TileEntityGasTank tileEntity = (TileEntityGasTank)world.getTileEntity(x, y, z);
-		ItemStack itemStack = new ItemStack(Mekanism.GasTank);
+		ItemStack itemStack = new ItemStack(MekanismBlocks.GasTank);
 
 		IGasItem storageTank = (IGasItem)itemStack.getItem();
 		storageTank.setGas(itemStack, tileEntity.gasTank.getGas());
@@ -236,9 +240,11 @@ public class BlockGasTank extends BlockContainer
 	{
 		TileEntity tile = world.getTileEntity(x, y, z);
 		ForgeDirection[] valid = new ForgeDirection[6];
+		
 		if(tile instanceof TileEntityBasicBlock)
 		{
 			TileEntityBasicBlock basicTile = (TileEntityBasicBlock)tile;
+			
 			for(ForgeDirection dir : ForgeDirection.VALID_DIRECTIONS)
 			{
 				if(basicTile.canSetFacing(dir.ordinal()))
@@ -247,6 +253,7 @@ public class BlockGasTank extends BlockContainer
 				}
 			}
 		}
+		
 		return valid;
 	}
 
@@ -254,15 +261,18 @@ public class BlockGasTank extends BlockContainer
 	public boolean rotateBlock(World world, int x, int y, int z, ForgeDirection axis)
 	{
 		TileEntity tile = world.getTileEntity(x, y, z);
+		
 		if(tile instanceof TileEntityBasicBlock)
 		{
 			TileEntityBasicBlock basicTile = (TileEntityBasicBlock)tile;
+			
 			if(basicTile.canSetFacing(axis.ordinal()))
 			{
 				basicTile.setFacing((short)axis.ordinal());
 				return true;
 			}
 		}
+		
 		return false;
 	}
 }

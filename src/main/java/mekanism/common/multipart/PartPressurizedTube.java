@@ -10,26 +10,33 @@ import mekanism.api.gas.IGasHandler;
 import mekanism.api.transmitters.IGridTransmitter;
 import mekanism.api.transmitters.TransmissionType;
 import mekanism.client.render.RenderPartTransmitter;
+import mekanism.common.Tier;
+import mekanism.common.Tier.TubeTier;
 import mekanism.common.util.MekanismUtils;
-
 import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.IIcon;
 import net.minecraftforge.common.util.ForgeDirection;
+import codechicken.lib.vec.Vector3;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 
-import codechicken.lib.vec.Vector3;
-
 public class PartPressurizedTube extends PartTransmitter<GasNetwork> implements IGasHandler
 {
-	public static TransmitterIcons tubeIcons = new TransmitterIcons(1, 1);
+	public Tier.TubeTier tier = Tier.TubeTier.BASIC;
+	
+	public static TransmitterIcons tubeIcons = new TransmitterIcons(4, 8);
 
 	public float currentScale;
 
 	public GasStack cacheGas;
 	public GasStack lastWrite;
+	
+	public PartPressurizedTube(Tier.TubeTier tubeTier)
+	{
+		tier = tubeTier;
+	}
 
 	@Override
 	public void update()
@@ -58,6 +65,27 @@ public class PartPressurizedTube extends PartTransmitter<GasNetwork> implements 
 					MekanismUtils.saveChunk(tile());
 				}
 			}
+
+			IGasHandler[] connectedAcceptors = GasTransmission.getConnectedAcceptors(tile());
+
+			for(ForgeDirection side : getConnections(ConnectionType.PULL))
+			{
+				if(connectedAcceptors[side.ordinal()] != null)
+				{
+					IGasHandler container = connectedAcceptors[side.ordinal()];
+
+					if(container != null)
+					{
+						GasStack received = container.drawGas(side.getOpposite(), tier.tubePullAmount, false);
+
+						if(received != null && received.amount != 0)
+						{
+							container.drawGas(side.getOpposite(), getTransmitterNetwork().emit(received, true), true);
+						}
+					}
+				}
+			}
+
 		}
 		else {
 			float targetScale = getTransmitterNetwork().gasScale;
@@ -92,7 +120,7 @@ public class PartPressurizedTube extends PartTransmitter<GasNetwork> implements 
 	@Override
 	public TransmitterType getTransmitter()
 	{
-		return TransmitterType.PRESSURIZED_TUBE;
+		return tier.type;
 	}
 
 	@Override
@@ -138,6 +166,8 @@ public class PartPressurizedTube extends PartTransmitter<GasNetwork> implements 
 	public void load(NBTTagCompound nbtTags)
 	{
 		super.load(nbtTags);
+		
+		tier = TubeTier.values()[nbtTags.getInteger("tier")];
 
 		if(nbtTags.hasKey("cacheGas"))
 		{
@@ -149,6 +179,8 @@ public class PartPressurizedTube extends PartTransmitter<GasNetwork> implements 
 	public void save(NBTTagCompound nbtTags)
 	{
 		super.save(nbtTags);
+		
+		nbtTags.setInteger("tier", tier.ordinal());
 
 		if(getTransmitterNetwork(false) != null && getTransmitterNetwork(false).getSize() > 0 && getTransmitterNetwork(false).gasStored != null)
 		{
@@ -173,25 +205,32 @@ public class PartPressurizedTube extends PartTransmitter<GasNetwork> implements 
 	@Override
 	public String getType()
 	{
-		return "mekanism:pressurized_tube";
+		return "mekanism:pressurized_tube_" + tier.name().toLowerCase();
 	}
 
 	public static void registerIcons(IIconRegister register)
 	{
-		tubeIcons.registerCenterIcons(register, new String[] {"PressurizedTube"});
-		tubeIcons.registerSideIcons(register, new String[] {"TransmitterSideSmall"});
+		tubeIcons.registerCenterIcons(register, new String[] {"PressurizedTubeBasic", "PressurizedTubeAdvanced", "PressurizedTubeElite", "PressurizedTubeUltimate"});
+		tubeIcons.registerSideIcons(register, new String[] {"SmallTransmitterVerticalBasic", "SmallTransmitterVerticalAdvanced", "SmallTransmitterVerticalElite", "SmallTransmitterVerticalUltimate",
+				"SmallTransmitterHorizontalBasic", "SmallTransmitterHorizontalAdvanced", "SmallTransmitterHorizontalElite", "SmallTransmitterHorizontalUltimate"});
 	}
 
 	@Override
-	public IIcon getCenterIcon()
+	public IIcon getCenterIcon(boolean opaque)
 	{
-		return tubeIcons.getCenterIcon(0);
+		return tubeIcons.getCenterIcon(tier.ordinal());
 	}
 
 	@Override
-	public IIcon getSideIcon()
+	public IIcon getSideIcon(boolean opaque)
 	{
-		return tubeIcons.getSideIcon(0);
+		return tubeIcons.getSideIcon(tier.ordinal());
+	}
+
+	@Override
+	public IIcon getSideIconRotated(boolean opaque)
+	{
+		return tubeIcons.getSideIcon(4+tier.ordinal());
 	}
 
 	@Override
@@ -255,24 +294,36 @@ public class PartPressurizedTube extends PartTransmitter<GasNetwork> implements 
 	@Override
 	public int getCapacity()
 	{
-		return 256;
+		return tier.tubeCapacity;
 	}
 
 	@Override
-	public int receiveGas(ForgeDirection side, GasStack stack) 
+	public int receiveGas(ForgeDirection side, GasStack stack, boolean doTransfer)
 	{
 		if(getConnectionType(side) == ConnectionType.NORMAL || getConnectionType(side) == ConnectionType.PULL)
 		{
-			return getTransmitterNetwork().emit(stack);
+			return getTransmitterNetwork().emit(stack, doTransfer);
 		}
 		
 		return 0;
 	}
 
 	@Override
-	public GasStack drawGas(ForgeDirection side, int amount) 
+	public int receiveGas(ForgeDirection side, GasStack stack)
+	{
+		return receiveGas(side, stack, true);
+	}
+
+	@Override
+	public GasStack drawGas(ForgeDirection side, int amount, boolean doTransfer)
 	{
 		return null;
+	}
+
+	@Override
+	public GasStack drawGas(ForgeDirection side, int amount)
+	{
+		return drawGas(side, amount, true);
 	}
 
 	@Override

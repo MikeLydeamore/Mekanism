@@ -246,7 +246,7 @@ item.dirtySilverDust.name=Dirty Silver Dust
 item.dirtyLeadDust.name=Dirty Lead Dust
 
 //Ingots
-item.obsidianIngot.name=Obsidian Ingot
+item.obsidianIngot.name=Refined Obsidian Ingot
 item.osmiumIngot.name=Osmium Ingot
 item.bronzeIngot.name=Bronze Ingot
 item.glowstoneIngot.name=Glowstone Ingot
@@ -477,6 +477,8 @@ gui.toggleCooling=Toggle Cooling Measurements
 gui.coolingMeasurements=Active cooling
 gui.redstoneOutputMode=Redstone mode
 gui.entityDetection=Entity Detection
+gui.moveUp=Move Up
+gui.moveDown=Move Down
 
 gui.reactor.injectionRate=Injection Rate
 

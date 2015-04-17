@@ -14,10 +14,9 @@ import mekanism.api.Coord4D;
 import mekanism.api.MekanismConfig.general;
 import mekanism.api.energy.ICableOutputter;
 import mekanism.api.energy.IStrictEnergyAcceptor;
-import mekanism.api.transmitters.IGridTransmitter;
+import mekanism.api.transmitters.ITransmitterTile;
 import mekanism.api.transmitters.TransmissionType;
 import mekanism.common.base.IEnergyWrapper;
-import mekanism.common.tile.TileEntityElectricBlock;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.common.util.ForgeDirection;
 import cofh.api.energy.IEnergyConnection;
@@ -26,30 +25,6 @@ import cofh.api.energy.IEnergyReceiver;
 
 public final class CableUtils
 {
-	private static Set<ForgeDirection> allSides = EnumSet.complementOf(EnumSet.of(ForgeDirection.UNKNOWN));
-
-	/**
-	 * Gets all the connected energy acceptors, whether IC2-based or BuildCraft-based, surrounding a specific tile entity.
-	 * @param tileEntity - center tile entity
-	 * @return TileEntity[] of connected acceptors
-	 */
-	public static TileEntity[] getConnectedEnergyAcceptors(TileEntity tileEntity)
-	{
-		TileEntity[] acceptors = new TileEntity[] {null, null, null, null, null, null};
-
-		for(ForgeDirection orientation : ForgeDirection.VALID_DIRECTIONS)
-		{
-			TileEntity acceptor = Coord4D.get(tileEntity).getFromSide(orientation).getTileEntity(tileEntity.getWorldObj());
-
-			if(isEnergyAcceptor(acceptor))
-			{
-				acceptors[orientation.ordinal()] = acceptor;
-			}
-		}
-
-		return acceptors;
-	}
-
 	public static boolean isEnergyAcceptor(TileEntity tileEntity)
 	{
 		return (tileEntity instanceof IStrictEnergyAcceptor ||
@@ -57,41 +32,13 @@ public final class CableUtils
 				(MekanismUtils.useRF() && tileEntity instanceof IEnergyReceiver));
 	}
 
-	/**
-	 * Gets all the connected cables around a specific tile entity.
-	 * @param tileEntity - center tile entity
-	 * @return TileEntity[] of connected cables
-	 */
-	public static TileEntity[] getConnectedCables(TileEntity tileEntity)
-	{
-		TileEntity[] cables = new TileEntity[] {null, null, null, null, null, null};
-
-		for(ForgeDirection orientation : ForgeDirection.VALID_DIRECTIONS)
-		{
-			TileEntity cable = Coord4D.get(tileEntity).getFromSide(orientation).getTileEntity(tileEntity.getWorldObj());
-
-			if(isCable(cable))
-			{
-				cables[orientation.ordinal()] = cable;
-			}
-		}
-
-		return cables;
-	}
-
 	public static boolean isCable(TileEntity tileEntity)
 	{
-		return TransmissionType.checkTransmissionType(tileEntity, TransmissionType.ENERGY);
-	}
-
-	/**
-	 * Gets all the adjacent connections to a TileEntity.
-	 * @param tileEntity - center TileEntity
-	 * @return boolean[] of adjacent connections
-	 */
-	public static boolean[] getConnections(TileEntity tileEntity)
-	{
-		return getConnections(tileEntity, allSides);
+		if(tileEntity instanceof ITransmitterTile)
+		{
+			return TransmissionType.checkTransmissionType(((ITransmitterTile)tileEntity).getTransmitter(), TransmissionType.ENERGY);
+		}
+		return false;
 	}
 
 	/**
@@ -124,6 +71,11 @@ public final class CableUtils
 	 */
 	public static boolean isValidAcceptorOnSide(TileEntity cableEntity, TileEntity tile, ForgeDirection side)
 	{
+		if(isCable(tile))
+		{
+			return false;
+		}
+
 		if(isEnergyAcceptor(tile) && isConnectable(cableEntity, tile, side))
 		{
 			return true;
@@ -161,27 +113,9 @@ public final class CableUtils
 				(MekanismUtils.useRF() && tileEntity instanceof IEnergyProvider && ((IEnergyConnection)tileEntity).canConnectEnergy(side.getOpposite()));
 	}
 
-	/**
-	 * Whether or not a cable can connect to a specific acceptor.
-	 * @param side - side to check
-	 * @param tile - cable TileEntity
-	 * @return whether or not the cable can connect to the specific side
-	 */
-	public static boolean canConnectToAcceptor(ForgeDirection side, TileEntity tile)
-	{
-		if(tile == null)
-		{
-			return false;
-		}
-
-		TileEntity tileEntity = Coord4D.get(tile).getFromSide(side).getTileEntity(tile.getWorldObj());
-
-		return isConnectable(tile, tileEntity, side);
-	}
-
 	public static boolean isConnectable(TileEntity orig, TileEntity tileEntity, ForgeDirection side)
 	{
-		if(tileEntity instanceof IGridTransmitter)
+		if(tileEntity instanceof ITransmitterTile)
 		{
 			return false;
 		}
